@@ -69,6 +69,16 @@ class GitBlob(GitObject):
         self.blobdata = data
 
 
+class GitCommit(GitObject):
+    fmt = b'commit'
+
+    def serialize(self):
+        return kvlm_serialize(self.kvlm)
+
+    def deserialize(self, data):
+        self.kvlm = kvlm_parse(data)
+
+
 #####################################################################
 # repo utilities
 #####################################################################
@@ -228,6 +238,62 @@ def object_write(obj, actually_write=True):
 
     return sha
 
+def kvlm_parse(raw, start=0, dct=None):
+    """Parse a 'key-value list with a message.
+    Format:
+    <key><space><value><newline>
+    values may have newlines, in which case the new line shall be indented by one space
+    the message is the last part of the format, and is separated from the rest with a blank newline.
+    """
+    if not dct:
+        dct = collections.OrderedDict()
+    # search for the next space, and the next newline
+    spc = raw.find(b' ', start)
+    nl = raw.find(b'\n', start)
+
+    # if no space was found OR a new line was encountered before a space, then this should be a blank line.
+    if (spc < 0) or (nl < spc):
+        assert(nl == start)
+        dct[b''] = raw[start+1:]
+        return dct
+
+    # otherwise, recurse...
+    key = raw[start : spc] # start -> space will be the key
+    end = start
+    while True:
+        end = raw.find(b'\n', end+1)
+        if raw[end+1] != ord(' '):
+            break
+
+    # parse out the value, including dropping leading spaces on new lines.
+    value = raw[spc+1:end].replace(b'\n ', b'\n')
+    if key in dct:
+        if type(dct[key]) == list:
+            dct[key].append(value)
+        else:
+            dct[key] = [dct[key], value]
+    else:
+        dct[key] = value
+
+    # keep parsing
+    return kvlm_parse(raw, start=end+1, dct=dct)
+
+
+def kvlm_serialize(kvlm):
+    ret = b''
+    for k in kvlm.keys():
+        # skip the message
+        if k == b'':
+            continue
+        val = kvlm[k]
+        # normalize to a list
+        if type(val) != list:
+            val = [val]
+        for v in val:
+            ret += k + b' ' + (v.replace(b'\n', b'\n ')) + b'\n'
+    ret += b'\n' + kvlm[b'']
+    return ret
+
 
 #####################################################################
 # main libwyag routine and cmd_* helpers
@@ -254,7 +320,6 @@ argsp.add_argument("type",
                    metavar="type",
                    choices=["blob", "commit", "tag", "tree"],
                    help="Specify the type")
-
 argsp.add_argument("object",
                    metavar="object",
                    help="The object to display")
@@ -263,21 +328,26 @@ argsp.add_argument("object",
 argsp = argsubparsers.add_parser(
     'hash-object',
     help='Compute object ID and optionally creates a blob from a file')
-
 argsp.add_argument('-t',
                    metavar='type',
                    dest='type',
                    choices=['blob', 'commit', 'tag', 'tree'],
                    default='blob',
                    help='Specify the type')
-
 argsp.add_argument('-w',
                    dest='write',
                    action='store_true',
                    help='Actually write the object into the database')
-
 argsp.add_argument('path',
                    help='Read object from <file>')
+
+# subparser for log
+argsp = argsubparsers.add_parser('log', help='Display history of a given commit.')
+argsp.add_argument('commit',
+                   default='HEAD',
+                   nargs='?',
+                   help='Commit to start at.')
+
 
 def main(argv=sys.argv[1:]):
     args = argparser.parse_args(argv)
@@ -288,6 +358,8 @@ def main(argv=sys.argv[1:]):
         cmd_cat_file(args)
     elif args.command == "hash-object":
         cmd_hash_object(args)
+    elif args.command == 'log':
+        cmd_log(args)
 
 
 def cmd_init(args):
@@ -310,6 +382,13 @@ def cmd_hash_object(args):
         print(sha)
 
 
+def cmd_log(args):
+    repo = repo_find()
+    print('digraph wyaglog{')
+    log_graphviz(repo, object_find(repo, args.commit), set())
+    print('}')
+
+
 def cat_file(repo, obj, fmt=None):
     obj = object_read(repo, object_find(repo, obj, fmt=fmt))
     sys.stdout.buffer.write(obj.serialize())
@@ -329,3 +408,26 @@ def object_hash(fd, fmt, repo=None):
         raise Exception('Unknown type %s!' % fmt)
 
     return object_write(obj, repo)
+
+
+def log_graphviz(repo, sha, seen):
+    '''
+    Generate a "log" in the graphviz format.
+    '''
+    if sha in seen:
+        return
+    seen.add(sha)
+    commit = object_read(repo, sha)
+    assert (commit.fmt == b'commit')
+    if not b'parent' in commit.kvlm.keys():
+        return
+
+    parents = commit.kvlm[b'parent']
+
+    if type(parents) != list:
+        parents = [parents]
+
+    for p in parents:
+        p = p.decode('ascii')
+        print('c_{0} -> c_{1};'.format(sha, p))
+        log_graphviz(repo, p, seen)
