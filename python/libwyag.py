@@ -79,6 +79,22 @@ class GitCommit(GitObject):
         self.kvlm = kvlm_parse(data)
 
 
+class GitTreeLeaf(object):
+    def __init__(self, mode, path, sha):
+        self.mode = mode
+        self.path = path
+        self.sha = sha
+
+
+class GitTree(GitObject):
+    fmt = b'tree'
+
+    def deserialize(self, data):
+        self.items = tree_parse(data)
+
+    def serialize(self):
+        return tree_serialize(self)
+
 #####################################################################
 # repo utilities
 #####################################################################
@@ -238,6 +254,7 @@ def object_write(obj, actually_write=True):
 
     return sha
 
+
 def kvlm_parse(raw, start=0, dct=None):
     """Parse a 'key-value list with a message.
     Format:
@@ -295,6 +312,46 @@ def kvlm_serialize(kvlm):
     return ret
 
 
+def tree_parse_one(raw, start=0):
+    # A tree object is formatted like this:
+    # <mode><space><path><null><sha>
+    x = raw.find(b' ', start)
+    assert(x - start == 5 or x - start == 6)
+
+    # before the space is the mode
+    mode = raw[start:x]
+
+    # find the path
+    y = raw.find(b'\x00', x)
+    path = raw[x+1:y]
+
+    sha = format(int.from_bytes(raw[y+1:y+21], 'big'), '040x')
+
+    return y+21, GitTreeLeaf(mode, path, sha)
+
+
+def tree_parse(raw):
+    pos = 0
+    max = len(raw)
+    ret = list()
+    while pos < max:
+        pos, data = tree_parse_one(raw, pos)
+        ret.append(data)
+    return ret
+
+
+def tree_serialize(obj):
+    ret = b''
+    for i in obj.items:
+        ret += i.mode
+        ret += b' '
+        ret += i.path
+        ret += b'\x00'
+        sha = int(i.sha, 16)
+        ret += sha.to_bytes(20, byteorder='big')
+    return ret
+
+
 #####################################################################
 # main libwyag routine and cmd_* helpers
 #####################################################################
@@ -348,6 +405,11 @@ argsp.add_argument('commit',
                    nargs='?',
                    help='Commit to start at.')
 
+# subparser for ls-tree
+argsp = argsubparsers.add_parser('ls-tree', help='Pretty-preint a tree object.')
+argsp.add_argument('object',
+                   help='The object to show.')
+
 
 def main(argv=sys.argv[1:]):
     args = argparser.parse_args(argv)
@@ -360,6 +422,8 @@ def main(argv=sys.argv[1:]):
         cmd_hash_object(args)
     elif args.command == 'log':
         cmd_log(args)
+    elif args.command == 'ls-tree':
+        cmd_ls_tree(args)
 
 
 def cmd_init(args):
@@ -388,6 +452,20 @@ def cmd_log(args):
     log_graphviz(repo, object_find(repo, args.commit), set())
     print('}')
 
+
+def cmd_ls_tree(args):
+    repo = repo_find()
+    obj = object_read(repo, object_find(repo, args.object, fmt=b'tree'))
+
+    for item in obj.items:
+        print('{0} {1} {2}\t{3}'.format(
+            '0' * (6 - len(item.mode)) + item.mode.decode('ascii'),
+            # git's ls-tree displays the type of the object pointed to.
+            # Let's do that too :)
+            object_read(repo, item.sha).fmt.decode('ascii'),
+            item.sha,
+            item.path.decode('ascii')
+        ))
 
 def cat_file(repo, obj, fmt=None):
     obj = object_read(repo, object_find(repo, obj, fmt=fmt))
