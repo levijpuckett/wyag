@@ -46,6 +46,7 @@ class GitRepository(object):
 class GitObject(object):
     """A generic representation of a git object."""
     repo = None
+    fmt = b''
 
     def __init__(self, repo, data=None):
         self.repo = repo
@@ -352,6 +353,25 @@ def tree_serialize(obj):
     return ret
 
 
+def tree_walk(obj: GitObject, recurse=False, path=''):
+    """Print a tree object and optionally recurse down into the given
+    tree SHA until we reach a blob."""
+    for item in obj.items:
+        subobj = object_read(obj.repo, item.sha)
+        if recurse and (type(subobj) == GitTree):
+            tree_walk(subobj, recurse=True,
+                      path=os.path.join(path, item.path.decode()))
+        else:
+            print('{0} {1} {2}\t{3}'.format(
+                '0' * (6 - len(item.mode)) + item.mode.decode('ascii'),
+                # git's ls-tree displays the type of the object pointed to.
+                # Let's do that too :)
+                subobj.fmt.decode('ascii'),
+                item.sha,
+                path + item.path.decode('ascii')
+            ))
+
+
 #####################################################################
 # main libwyag routine and cmd_* helpers
 #####################################################################
@@ -406,9 +426,14 @@ argsp.add_argument('commit',
                    help='Commit to start at.')
 
 # subparser for ls-tree
-argsp = argsubparsers.add_parser('ls-tree', help='Pretty-preint a tree object.')
+argsp = argsubparsers.add_parser('ls-tree', help='Pretty-print a tree object.')
 argsp.add_argument('object',
                    help='The object to show.')
+
+argsp.add_argument('-r',
+                   dest='recurse',
+                   action='store_true',
+                   help='Recurse into subtrees')
 
 
 def main(argv=sys.argv[1:]):
@@ -455,17 +480,14 @@ def cmd_log(args):
 
 def cmd_ls_tree(args):
     repo = repo_find()
-    obj = object_read(repo, object_find(repo, args.object, fmt=b'tree'))
+    obj = object_read(repo, object_find(repo, args.object))
+    if type(obj) != GitTree:
+        raise Exception('"object" must be a tree, but is a %s' %
+                        obj.fmt.decode('ascii'))
 
-    for item in obj.items:
-        print('{0} {1} {2}\t{3}'.format(
-            '0' * (6 - len(item.mode)) + item.mode.decode('ascii'),
-            # git's ls-tree displays the type of the object pointed to.
-            # Let's do that too :)
-            object_read(repo, item.sha).fmt.decode('ascii'),
-            item.sha,
-            item.path.decode('ascii')
-        ))
+    assert (type(obj) == GitTree)
+    tree_walk(obj, recurse=args.recurse)
+
 
 def cat_file(repo, obj, fmt=None):
     obj = object_read(repo, object_find(repo, obj, fmt=fmt))
