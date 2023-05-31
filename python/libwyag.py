@@ -435,6 +435,14 @@ argsp.add_argument('-r',
                    action='store_true',
                    help='Recurse into subtrees')
 
+argsp = argsubparsers.add_parser('checkout', help='Checkout a commit into the given directory.')
+
+argsp.add_argument('commit',
+                   help='The commit or tree to checkout.')
+
+argsp.add_argument('path',
+                   help='The EMPTY directory to checkout on.')
+
 
 def main(argv=sys.argv[1:]):
     args = argparser.parse_args(argv)
@@ -449,6 +457,8 @@ def main(argv=sys.argv[1:]):
         cmd_log(args)
     elif args.command == 'ls-tree':
         cmd_ls_tree(args)
+    elif args.command == 'checkout':
+        cmd_checkout(args)
 
 
 def cmd_init(args):
@@ -487,6 +497,26 @@ def cmd_ls_tree(args):
 
     assert (type(obj) == GitTree)
     tree_walk(obj, recurse=args.recurse)
+
+
+def cmd_checkout(args):
+    repo = repo_find()
+    obj = object_read(repo, object_find(repo, args.commit))
+
+    # if the object is a commit, we grab its tree
+    if obj.fmt == b'commit':
+        obj = object_read(repo, obj.kvlm[b'tree'].decode('ascii'))
+
+    # verify that path is an empty directory
+    if os.path.exists(args.path):
+        if not os.path.isdir(args.path):
+            raise Exception('Not a directory {0}!'.format(args.path))
+        if os.listdir(args.path):
+            raise Exception('{0} is not empty!'.format(args.path))
+    else:
+        os.makedirs(args.path)
+
+    tree_checkout(repo, obj, os.path.realpath(args.path).encode())
 
 
 def cat_file(repo, obj, fmt=None):
@@ -531,3 +561,20 @@ def log_graphviz(repo, sha, seen):
         p = p.decode('ascii')
         print('c_{0} -> c_{1};'.format(sha, p))
         log_graphviz(repo, p, seen)
+
+
+def tree_checkout(repo, tree, path):
+    for item in tree.items:
+        # grab the object
+        obj = object_read(repo, item.sha)
+        # and the path to it (relative to the root git dir)
+        dest = os.path.join(path, item.path)
+
+        if obj.fmt == b'tree':
+            # if it's a tree, make a directory and recurse into it
+            os.mkdir(dest)
+            tree_checkout(repo, obj, dest)
+        elif obj.fmt == b'blob':
+            # if it's a blob, then 'dest' is a file name, and let's unpack the blob into it.
+            with open(dest, 'wb') as f:
+                f.write(obj.blobdata)
