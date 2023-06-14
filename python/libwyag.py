@@ -239,7 +239,23 @@ def object_read(repo, sha) -> GitObject:
 
 
 def object_find(repo, name, fmt=None, follow=True):
-    return name
+    # return the sha of an object, referred to by name, short hash, or full hash.
+    if name == 'HEAD':
+        return ref_resolve(repo, 'HEAD')
+
+    hash_re = re.compile(r'^[0-9A-Fa-f]{6,40}$')
+    if hash_re.match(name):
+        if len(name) == 40:
+            return name.lower()
+
+        name = name.lower()
+        prefix = name[:2]
+        path = repo_dir(repo, 'objects', prefix)
+        if path:
+            remainder = name[2:]
+            for f in os.listdir(path):
+                if f.startswith(remainder):
+                    return prefix + f
 
 
 def object_write(obj, actually_write=True):
