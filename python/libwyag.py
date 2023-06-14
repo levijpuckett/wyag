@@ -117,7 +117,7 @@ def repo_dir(repo, *path, mkdir=False):
     """Same as repo_path, but mkdir *path if absent and mkdir is True"""
     path = repo_path(repo, *path)
     if os.path.exists(path):
-        if (os.path.isdir(path)):
+        if os.path.isdir(path):
             return path
         else:
             raise Exception("Not a directory %s" % path)
@@ -372,6 +372,32 @@ def tree_walk(obj: GitObject, recurse=False, path=''):
             ))
 
 
+def ref_resolve(repo, ref):
+    # resolve a ref by recursing until we hit a SHA1 hash
+    with open(repo_file(repo, ref), 'r') as fp:
+        # the last character is '\n' so drop it
+        data = fp.read()[:-1]
+    if data.startswith('ref: '):
+        return ref_resolve(repo, data[5:])
+    else:
+        return data
+
+
+def ref_list(repo, path=None) -> collections.OrderedDict:
+    if not path:
+        path = repo_dir(repo, 'refs')
+
+    # ordered dict to sort the refs like git.
+    ret = collections.OrderedDict()
+    for f in sorted(os.listdir(path)):
+        candidate = os.path.join(path, f)
+        if os.path.isdir(candidate):
+            ret[f] = ref_list(repo, candidate)
+        else:
+            ret[f] = ref_resolve(repo, candidate)
+    return ret
+
+
 #####################################################################
 # main libwyag routine and cmd_* helpers
 #####################################################################
@@ -443,6 +469,8 @@ argsp.add_argument('commit',
 argsp.add_argument('path',
                    help='The EMPTY directory to checkout on.')
 
+argsp = argsubparsers.add_parser('show-ref', help='list references.')
+
 
 def main(argv=sys.argv[1:]):
     args = argparser.parse_args(argv)
@@ -459,6 +487,8 @@ def main(argv=sys.argv[1:]):
         cmd_ls_tree(args)
     elif args.command == 'checkout':
         cmd_checkout(args)
+    elif args.command == 'show-ref':
+        cmd_show_ref(args)
 
 
 def cmd_init(args):
@@ -517,6 +547,24 @@ def cmd_checkout(args):
         os.makedirs(args.path)
 
     tree_checkout(repo, obj, os.path.realpath(args.path).encode())
+
+
+def cmd_show_ref(args):
+    repo = repo_find()
+    refs = ref_list(repo)
+    show_ref(repo, refs, prefix='refs')
+
+
+def show_ref(repo: GitRepository, refs: collections.OrderedDict, with_hash=True, prefix=''):
+    for ref_name, sha in refs.items():
+        if type(sha) == str:
+            print('{0}{1}{2}'.format(
+                sha + ' ' if with_hash else '',
+                prefix + '/' if prefix else '',
+                ref_name
+            ))
+        else:
+            show_ref(repo, sha, with_hash=with_hash, prefix="{0}{1}{2}".format(prefix, '/' if prefix else '', ref_name))
 
 
 def cat_file(repo, obj, fmt=None):
