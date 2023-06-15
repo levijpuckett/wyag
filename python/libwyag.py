@@ -238,6 +238,20 @@ def object_read(repo, sha) -> GitObject:
         return c(repo, raw[y + 1:])
 
 
+def find_named_ref(repo, name, refs=None):
+    if not refs:
+        refs = ref_list(repo)
+
+    for k, v in refs.items():
+        if type(v) == collections.OrderedDict:
+            sha = find_named_ref(repo, name, refs=v)
+            if sha:
+                return sha
+        else:
+            if k == name:
+                return v
+
+
 def object_find(repo, name, fmt=None, follow=True):
     # return the sha of an object, referred to by name, short hash, or full hash.
     if name == 'HEAD':
@@ -256,6 +270,9 @@ def object_find(repo, name, fmt=None, follow=True):
             for f in os.listdir(path):
                 if f.startswith(remainder):
                     return prefix + f
+
+    # try searching the repo's refs for name
+    return find_named_ref(repo, name)
 
 
 def object_write(obj, actually_write=True):
@@ -608,6 +625,8 @@ def cmd_tag(args):
 def tag_create(repo, name, reference, annotated_tag):
     # get the GitObject from the object reference
     sha = object_find(repo, reference)
+    if not sha:
+        raise Exception('Bad reference! Could not resolve object to tag!')
 
     if annotated_tag:
         # create a tag object, which is formed like a commit (except with different keys).
