@@ -246,7 +246,7 @@ def find_named_ref(repo, name):
 
 
 def resolve_shorthash(repo, name):
-    hash_re = re.compile(r'^[0-9A-Fa-f]{6,40}$')
+    hash_re = re.compile(r'^[0-9A-Fa-f]{4,40}$')
     if hash_re.match(name):
         if len(name) == 40:
             return name.lower()
@@ -605,10 +605,9 @@ def cmd_log(args):
 
 def cmd_ls_tree(args):
     repo = repo_find()
-    obj = object_read(repo, object_find(repo, args.object))
+    obj = object_read(repo, object_find(repo, args.object, fmt=b'tree'))
     if type(obj) != GitTree:
-        raise Exception('"object" must be a tree, but is a %s' %
-                        obj.fmt.decode('ascii'))
+        raise Exception(f'"object" must be a tree, but is a {obj.fmt.decode("ascii")}')
 
     assert (type(obj) == GitTree)
     tree_walk(obj, recurse=args.recurse)
