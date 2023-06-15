@@ -261,13 +261,36 @@ def resolve_shorthash(repo, name):
                     return prefix + f
 
 
-def object_find(repo, name, fmt=None, follow=True):
+def object_resolve(repo, name):
     # return the sha of an object, referred to by name, short hash, or full hash.
     sha = resolve_shorthash(repo, name)
     if sha:
         return sha
 
-    return find_named_ref(repo, name)
+    sha = find_named_ref(repo, name)
+    return sha
+
+
+def object_find(repo, name, fmt=None, follow=True):
+    sha = object_resolve(repo, name)
+    if not sha:
+        raise Exception(f'No such reference: {name}')
+    if not fmt:
+        return sha
+
+    while True:
+        obj = object_read(repo, sha)
+        if obj.fmt == fmt:
+            return sha
+        if not follow:
+            return None
+
+        if obj.fmt == b'tag':
+            sha = obj.kvlm[b'object'].decode('ascii')
+        elif obj.fmt == b'commit' and fmt == b'tree':
+            sha = obj.kvlm[b'tree'].decode('ascii')
+        else:
+            return None
 
 
 def object_write(obj, actually_write=True):
@@ -518,6 +541,17 @@ argsp.add_argument('object',
                    nargs='?',
                    help='The object the new tag will point to')
 
+argsp = argsubparsers.add_parser('rev-parse',
+                                 help='Parse revision (or other objects) identifiers')
+argsp.add_argument('--wyag-type',
+                   metavar='type',
+                   dest='type',
+                   choices=['blob', 'commit', 'tag', 'tree'],
+                   default=None,
+                   help='Specify the expected type')
+argsp.add_argument('name',
+                   help='The name to parse')
+
 
 def main(argv=sys.argv[1:]):
     args = argparser.parse_args(argv)
@@ -538,6 +572,8 @@ def main(argv=sys.argv[1:]):
         cmd_show_ref(args)
     elif args.command == 'tag':
         cmd_tag(args)
+    elif args.command == 'rev-parse':
+        cmd_rev_parse(args)
 
 
 def cmd_init(args):
@@ -615,6 +651,16 @@ def cmd_tag(args):
         # no name? just list the tags.
         refs = ref_list(repo)
         show_ref(repo, refs['tags'], with_hash=False)
+
+
+def cmd_rev_parse(args):
+    if args.type:
+        fmt = args.type.encode()
+    else:
+        fmt = None
+
+    repo = repo_find()
+    print(object_find(repo, args.name, fmt, follow=True))
 
 
 def tag_create(repo, name, reference, annotated_tag):
