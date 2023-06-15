@@ -238,25 +238,14 @@ def object_read(repo, sha) -> GitObject:
         return c(repo, raw[y + 1:])
 
 
-def find_named_ref(repo, name, refs=None):
-    if not refs:
-        refs = ref_list(repo)
-
-    for k, v in refs.items():
-        if type(v) == collections.OrderedDict:
-            sha = find_named_ref(repo, name, refs=v)
-            if sha:
-                return sha
-        else:
-            if k == name:
-                return v
+# def find_named_ref(repo, name, refs=None):
+def find_named_ref(repo, name):
+    for path in [name, f'refs/heads/{name}', f'refs/remotes/{name}', f'refs/tags/{name}']:
+        if os.path.isfile(repo_file(repo, path)):
+            return ref_resolve(repo, path)
 
 
-def object_find(repo, name, fmt=None, follow=True):
-    # return the sha of an object, referred to by name, short hash, or full hash.
-    if name == 'HEAD':
-        return ref_resolve(repo, 'HEAD')
-
+def resolve_shorthash(repo, name):
     hash_re = re.compile(r'^[0-9A-Fa-f]{6,40}$')
     if hash_re.match(name):
         if len(name) == 40:
@@ -271,7 +260,13 @@ def object_find(repo, name, fmt=None, follow=True):
                 if f.startswith(remainder):
                     return prefix + f
 
-    # try searching the repo's refs for name
+
+def object_find(repo, name, fmt=None, follow=True):
+    # return the sha of an object, referred to by name, short hash, or full hash.
+    sha = resolve_shorthash(repo, name)
+    if sha:
+        return sha
+
     return find_named_ref(repo, name)
 
 
