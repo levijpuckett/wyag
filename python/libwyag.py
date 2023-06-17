@@ -690,6 +690,9 @@ def cmd_branch(args):
             data = f.read()
         if data.startswith('ref: refs/heads/'):
             asterisk = data[16:-1]  # grab just the branch name and strip off the newline character.
+        else:
+            asterisk = ' '
+            print(f'* (HEAD detached at {data[0:7]})')
         show_ref(repo, refs['heads'], with_hash=False, asterisk=asterisk)
 
 

@@ -206,7 +206,10 @@ run_test branch wyagtest2 wyagtest
 step "branch: create, with start-point as past commit"
 run_test branch wyagtest3 b664
 
-step "branch: list more"
+step "branch: list in detached HEAD"
+cd left && git co main~ > /dev/null
+cd ../right && git co main~ > /dev/null
+cd ..
 run_test branch
 
 echo ""
