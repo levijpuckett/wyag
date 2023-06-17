@@ -7,6 +7,7 @@ function step() {
 }
 
 wyag=$(realpath ./wyag)
+echo "testing: $wyag"
 
 testdir=/tmp/wyag-tests
 if [[ -e $testdir ]]; then
@@ -15,7 +16,7 @@ else
     mkdir $testdir
 fi
 cd $testdir
-step "working on $(pwd)"
+echo "working in: $(pwd)"
 
 step Create repos
 $wyag init left
@@ -96,6 +97,22 @@ cd left
 $wyag cat-file tree HEAD > ../file1
 cd ../right
 git cat-file tree HEAD > ../file2
+cd ..
+cmp file1 file2
+
+step cat-file with show_type on a commit
+cd left
+$wyag cat-file -t HEAD > ../file1
+cd ../right
+git cat-file -t HEAD > ../file2
+cd ..
+cmp file1 file2
+
+step cat-file with show_type on a blob
+cd left
+$wyag cat-file -t b17d > ../file1
+cd ../right
+git cat-file -t b17d > ../file2
 cd ..
 cmp file1 file2
 

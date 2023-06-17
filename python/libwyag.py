@@ -239,7 +239,7 @@ def object_read(repo, sha) -> GitObject:
 
 
 # def find_named_ref(repo, name, refs=None):
-def find_named_ref(repo, name):
+def resolve_named_ref(repo, name):
     for path in [name, f'refs/heads/{name}', f'refs/remotes/{name}', f'refs/tags/{name}']:
         if os.path.isfile(repo_file(repo, path)):
             return ref_resolve(repo, path)
@@ -267,7 +267,7 @@ def object_resolve(repo, name):
     if sha:
         return sha
 
-    sha = find_named_ref(repo, name)
+    sha = resolve_named_ref(repo, name)
     return sha
 
 
@@ -478,8 +478,13 @@ argsp.add_argument("path",
 argsp = argsubparsers.add_parser("cat-file", help="Provide content of repository objects")
 argsp.add_argument("type",
                    metavar="type",
+                   nargs='?',
                    choices=["blob", "commit", "tag", "tree"],
                    help="Specify the type")
+argsp.add_argument('-t',
+                   dest='show_type',
+                   action='store_true',
+                   help='show the type of the object.')
 argsp.add_argument("object",
                    metavar="object",
                    help="The object to display")
@@ -582,7 +587,11 @@ def cmd_init(args):
 
 def cmd_cat_file(args):
     repo = repo_find()
-    cat_file(repo, args.object, fmt=args.type.encode())
+    if args.show_type:
+        sha = object_find(repo, args.object, follow=False)
+        print(object_read(repo, sha).fmt.decode('ascii'))
+    else:
+        cat_file(repo, args.object, fmt=args.type.encode())
 
 
 def cmd_hash_object(args):
