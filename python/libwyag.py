@@ -557,6 +557,16 @@ argsp.add_argument('--wyag-type',
 argsp.add_argument('name',
                    help='The name to parse')
 
+argsp = argsubparsers.add_parser('branch',
+                                 help='Create or list branches.')
+argsp.add_argument('name',
+                   nargs='?',
+                   help='name for the new branch')
+argsp.add_argument('startpoint',
+                   default='HEAD',
+                   nargs='?',
+                   help='The commit to start the new branch on.')
+
 
 def main(argv=sys.argv[1:]):
     args = argparser.parse_args(argv)
@@ -579,6 +589,8 @@ def main(argv=sys.argv[1:]):
         cmd_tag(args)
     elif args.command == 'rev-parse':
         cmd_rev_parse(args)
+    elif args.command == 'branch':
+        cmd_branch(args)
 
 
 def cmd_init(args):
@@ -661,6 +673,26 @@ def cmd_tag(args):
         show_ref(repo, refs['tags'], with_hash=False)
 
 
+def cmd_branch(args):
+    repo = repo_find()
+    if args.name:
+        # make a new branch with this name
+        sha = object_find(repo, args.startpoint)
+        if not sha:
+            raise Exception('Bad reference! Could not resolve object to tag!')
+        # create a branch (just a ref!)
+        ref_create(repo, os.path.join('heads', args.name), sha)
+    else:
+        # just list the branches, and star the branch we currently have checked out (if any)
+        refs = ref_list(repo)
+        asterisk = ''
+        with open(repo_file(repo, 'HEAD'), 'r') as f:
+            data = f.read()
+        if data.startswith('ref: refs/heads/'):
+            asterisk = data[16:-1]  # grab just the branch name and strip off the newline character.
+        show_ref(repo, refs['heads'], with_hash=False, asterisk=asterisk)
+
+
 def cmd_rev_parse(args):
     if args.type:
         fmt = args.type.encode()
@@ -705,16 +737,19 @@ def ref_create(repo, ref_name, sha):
         f.write(sha + '\n')
 
 
-def show_ref(repo: GitRepository, refs: collections.OrderedDict, with_hash=True, prefix=''):
+def show_ref(repo: GitRepository, refs: collections.OrderedDict, with_hash=True, prefix='', asterisk=''):
     for ref_name, sha in refs.items():
         if type(sha) == str:
-            print('{0}{1}{2}'.format(
+            output = '{0}{1}{2}'.format(
                 sha + ' ' if with_hash else '',
                 prefix + '/' if prefix else '',
-                ref_name
-            ))
+                ref_name)
+            if asterisk != '':
+                output = '* ' + output if output == asterisk else '  ' + output
+            print(output)
         else:
-            show_ref(repo, sha, with_hash=with_hash, prefix="{0}{1}{2}".format(prefix, '/' if prefix else '', ref_name))
+            show_ref(repo, sha, with_hash=with_hash, prefix="{0}{1}{2}".format(prefix, '/' if prefix else '', ref_name),
+                                                                               asterisk=asterisk)
 
 
 def cat_file(repo, obj, fmt=None):

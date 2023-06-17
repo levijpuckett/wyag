@@ -195,6 +195,21 @@ run_test rev-parse TEST
 #step "rev-parse (wyag redirection tester)"
 #@TODO
 
+step "branch: list"
+run_test branch
+
+step "branch: create, no start-point"
+run_test branch wyagtest
+
+step "branch: create, with start-point as branch"
+run_test branch wyagtest2 wyagtest
+
+step "branch: create, with start-point as past commit"
+run_test branch wyagtest3 b664
+
+step "branch: list more"
+run_test branch
+
 echo ""
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 echo "All tests passing! Hooray!!"
