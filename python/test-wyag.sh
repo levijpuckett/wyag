@@ -20,13 +20,12 @@ function step() {
 
 function run_test() {
     cd left
-    git $@ > ../file1
-    verbose && git $@
+    verbose && echo "git: " && git $@ | tee ../file1 || git $@ > ../file1
     cd ../right
-    $wyag $@ > ../file2
-    verbose && $wyag $@
+    verbose && echo "wyag: " && $wyag $@ | tee ../file2 || $wyag $@ > ../file2
     cd ..
     cmp file1 file2
+    verbose && echo "" || :
 }
 
 wyag=$(realpath ./wyag)
@@ -214,3 +213,8 @@ echo ""
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 echo "All tests passing! Hooray!!"
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+echo ""
+
+# clean up
+cd ~
+rm -rf $testdir/*
