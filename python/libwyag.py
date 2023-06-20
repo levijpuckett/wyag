@@ -101,6 +101,83 @@ class GitTree(GitObject):
     def serialize(self):
         return tree_serialize(self)
 
+
+class GitIndexEntry(object):
+    def __init__(self, ctime=None, mtime=None, dev=None, ino=None,
+                 mode_type=None, mode_perms=None, uid=None, gid=None,
+                 fsize=None, obj_hash=None, flag_assume_valid=None,
+                 flag_extended=None, flag_stage=None,
+                 flag_name_length=None, name=None):
+        """The last time a file's metadata changed.  This is a tuple (seconds, nanoseconds)"""
+        self.ctime = ctime
+        """The last time a file's data changed.  This is a tuple (seconds, nanoseconds)"""
+        self.mtime = mtime
+        """The ID of device containing this file"""
+        self.dev = dev
+        """The file's inode number"""
+        self.ino = ino
+        """The object type, either b1000 (regular), b1010 (symlink), b1110 (gitlink). """
+        self.mode_type = mode_type
+        """The object permissions, an integer."""
+        self.mode_perms = mode_perms
+        """User ID of owner"""
+        self.uid = uid
+        """Group ID of owner """
+        self.gid = gid
+        """Size of this object, in bytes"""
+        self.fsize = fsize
+        """The object's hash as a hex string"""
+        self.obj_hash = obj_hash
+        self.flag_assume_valid = flag_assume_valid
+        self.flag_extended = flag_extended
+        self.flag_stage = flag_stage
+        """Length of the name if < 0xFFF (yes, three Fs), -1 otherwise"""
+        self.flag_name_length = flag_name_length
+        self.name = name
+
+
+class GitIndex (object):
+    signature = None
+    version = None
+    entries = []
+    # ext = None
+    # sha = None
+
+    def __init__(self, file):
+        raw = None
+        with open(file, 'rb') as f:
+            raw = f.read()
+
+        header = raw[:12]
+        self.signature = header[:4]
+        self.version = hex(int.from_bytes(header[4:8], "big"))
+        nindex = int.from_bytes(header[8:12], "big")
+
+        self.entries = list()
+
+        content = raw[12:]
+        idx = 0
+        for i in range(0, nindex):
+            ctime = content[idx: idx+8]
+            mtime = content[idx+8: idx+16]
+            dev = content[idx+16: idx+20]
+            ino = content[idx+20: idx+24]
+            mode = content[idx+24: idx+28]  # TODO
+            uid = content[idx+28: idx+32]
+            gid = content[idx+32: idx+36]
+            fsize = content[idx+36: idx+40]
+            obj_hash = content[idx+40: idx+60]
+            flag = content[idx+60: idx+62]  # TODO
+            null_idx = content.find(b'\x00', idx+62)  # TODO
+            name = content[idx+62: null_idx]
+
+            idx = null_idx + 1
+            idx = 8 * ceil(idx / 8)
+
+            self.entries.append(
+                GitIndexEntry(ctime=ctime, mtime=mtime, dev=dev, ino=ino, mode_type=mode, uid=uid, gid=gid, fsize=fsize, obj_hash=obj_hash, name=name))
+
+
 #####################################################################
 # repo utilities
 #####################################################################
@@ -567,6 +644,8 @@ argsp.add_argument('startpoint',
                    nargs='?',
                    help='The commit to start the new branch on.')
 
+argsubparsers.add_parser('ls-files', help='List all the staged files')
+
 
 def main(argv=sys.argv[1:]):
     args = argparser.parse_args(argv)
@@ -591,6 +670,8 @@ def main(argv=sys.argv[1:]):
         cmd_rev_parse(args)
     elif args.command == 'branch':
         cmd_branch(args)
+    elif args.command == 'ls-files':
+        cmd_ls_files(args)
 
 
 def cmd_init(args):
@@ -704,6 +785,12 @@ def cmd_rev_parse(args):
 
     repo = repo_find()
     print(object_find(repo, args.name, fmt, follow=True))
+
+
+def cmd_ls_files(args):
+    repo = repo_find()
+    for e in GitIndex(repo_file(repo, 'index')).entries:
+        print(e.name.decode('ascii'))
 
 
 def tag_create(repo, name, reference, annotated_tag):
